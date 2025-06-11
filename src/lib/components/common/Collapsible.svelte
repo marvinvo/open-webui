@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { decode } from 'html-entities';
 	import { v4 as uuidv4 } from 'uuid';
+	import DOMPurify from 'dompurify';
 
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
@@ -40,7 +41,7 @@
 
 	export let className = '';
 	export let buttonClassName =
-		'w-fit text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition';
+		'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition';
 
 	export let id = '';
 	export let title = null;
@@ -146,7 +147,7 @@
 							/>
 						{/if}
 					{:else}
-						{title}
+						{@html DOMPurify.sanitize(title)}
 					{/if}
 				</div>
 

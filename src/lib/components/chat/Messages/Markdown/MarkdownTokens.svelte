@@ -257,7 +257,7 @@
 			title={token.summary}
 			open={$settings?.expandDetails ?? false}
 			attributes={token?.attributes}
-			className="w-full space-y-1"
+			className={token.summary.includes("agent_call") ? "w-full space-y-1 rounded-md border border-gray-200 p-2": "w-fit space-y-1"}
 			dir="auto"
 		>
 			<div class=" mb-1.5" slot="content">

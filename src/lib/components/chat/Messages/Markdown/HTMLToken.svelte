@@ -76,6 +76,6 @@
 	{:else if token.text.includes(`<source_id`)}
 		<Source {id} {token} onClick={onSourceClick} />
 	{:else}
-		{token.text}
+		{@html html}
 	{/if}
 {/if}
