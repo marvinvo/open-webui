@@ -82,7 +82,7 @@
 
 		<div class="flex flex-col md:flex-row w-full px-6 pb-5 md:space-x-4">
 			<div
-				class="flex flex-col w-full dark:text-gray-200 overflow-y-scroll max-h-[22rem] scrollbar-hidden"
+				class="flex flex-col w-full dark:text-gray-200 overflow-y-scroll max-h-[30rem] scrollbar-hidden"
 			>
 				{#each mergedDocuments as document, documentIdx}
 					<div class="flex flex-col w-full">
@@ -181,7 +181,7 @@
 						</div>
 						{#if document.metadata?.html}
 							<iframe
-								class="w-full border-0 h-auto rounded-none"
+								class="w-full border-0 h-[30rem] rounded-none"
 								sandbox="allow-scripts allow-forms allow-same-origin"
 								srcdoc={document.document}
 								title={$i18n.t('Content')}
