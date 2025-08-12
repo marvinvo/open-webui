@@ -55,9 +55,8 @@ from typing import Optional, List
 
 from ssl import CERT_NONE, CERT_REQUIRED, PROTOCOL_TLS
 
-if ENABLE_LDAP.value:
-    from ldap3 import Server, Connection, NONE, Tls
-    from ldap3.utils.conv import escape_filter_chars
+from ldap3 import Server, Connection, NONE, Tls
+from ldap3.utils.conv import escape_filter_chars
 
 router = APIRouter()
 
@@ -229,14 +228,30 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
         if not connection_app.bind():
             raise HTTPException(400, detail="Application account bind failed")
 
+        ENABLE_LDAP_GROUP_MANAGEMENT = (
+            request.app.state.config.ENABLE_LDAP_GROUP_MANAGEMENT
+        )
+        ENABLE_LDAP_GROUP_CREATION = request.app.state.config.ENABLE_LDAP_GROUP_CREATION
+        LDAP_ATTRIBUTE_FOR_GROUPS = request.app.state.config.LDAP_ATTRIBUTE_FOR_GROUPS
+
+        search_attributes = [
+            f"{LDAP_ATTRIBUTE_FOR_USERNAME}",
+            f"{LDAP_ATTRIBUTE_FOR_MAIL}",
+            "cn",
+        ]
+
+        if ENABLE_LDAP_GROUP_MANAGEMENT:
+            search_attributes.append(f"{LDAP_ATTRIBUTE_FOR_GROUPS}")
+            log.info(
+                f"LDAP Group Management enabled. Adding {LDAP_ATTRIBUTE_FOR_GROUPS} to search attributes"
+            )
+
+        log.info(f"LDAP search attributes: {search_attributes}")
+
         search_success = connection_app.search(
             search_base=LDAP_SEARCH_BASE,
             search_filter=f"(&({LDAP_ATTRIBUTE_FOR_USERNAME}={escape_filter_chars(form_data.user.lower())}){LDAP_SEARCH_FILTERS})",
-            attributes=[
-                f"{LDAP_ATTRIBUTE_FOR_USERNAME}",
-                f"{LDAP_ATTRIBUTE_FOR_MAIL}",
-                "cn",
-            ],
+            attributes=search_attributes,
         )
 
         if not search_success or not connection_app.entries:
@@ -259,6 +274,69 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
         cn = str(entry["cn"])
         user_dn = entry.entry_dn
 
+        user_groups = []
+        if ENABLE_LDAP_GROUP_MANAGEMENT and LDAP_ATTRIBUTE_FOR_GROUPS in entry:
+            group_dns = entry[LDAP_ATTRIBUTE_FOR_GROUPS]
+            log.info(f"LDAP raw group DNs for user {username}: {group_dns}")
+
+            if group_dns:
+                log.info(f"LDAP group_dns original: {group_dns}")
+                log.info(f"LDAP group_dns type: {type(group_dns)}")
+                log.info(f"LDAP group_dns length: {len(group_dns)}")
+
+                if hasattr(group_dns, "value"):
+                    group_dns = group_dns.value
+                    log.info(f"Extracted .value property: {group_dns}")
+                elif hasattr(group_dns, "__iter__") and not isinstance(
+                    group_dns, (str, bytes)
+                ):
+                    group_dns = list(group_dns)
+                    log.info(f"Converted to list: {group_dns}")
+
+                if isinstance(group_dns, list):
+                    group_dns = [str(item) for item in group_dns]
+                else:
+                    group_dns = [str(group_dns)]
+
+                log.info(
+                    f"LDAP group_dns after processing - type: {type(group_dns)}, length: {len(group_dns)}"
+                )
+
+                for group_idx, group_dn in enumerate(group_dns):
+                    group_dn = str(group_dn)
+                    log.info(f"Processing group DN #{group_idx + 1}: {group_dn}")
+
+                    try:
+                        group_cn = None
+
+                        for item in group_dn.split(","):
+                            item = item.strip()
+                            if item.upper().startswith("CN="):
+                                group_cn = item[3:]
+                                break
+
+                        if group_cn:
+                            user_groups.append(group_cn)
+
+                        else:
+                            log.warning(
+                                f"Could not extract CN from group DN: {group_dn}"
+                            )
+                    except Exception as e:
+                        log.warning(
+                            f"Failed to extract group name from DN {group_dn}: {e}"
+                        )
+
+                log.info(
+                    f"LDAP groups for user {username}: {user_groups} (total: {len(user_groups)})"
+                )
+            else:
+                log.info(f"No groups found for user {username}")
+        elif ENABLE_LDAP_GROUP_MANAGEMENT:
+            log.warning(
+                f"LDAP Group Management enabled but {LDAP_ATTRIBUTE_FOR_GROUPS} attribute not found in user entry"
+            )
+
         if username == form_data.user.lower():
             connection_user = Connection(
                 server,
@@ -273,11 +351,9 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
             user = Users.get_user_by_email(email)
             if not user:
                 try:
-                    user_count = Users.get_num_users()
-
                     role = (
                         "admin"
-                        if user_count == 0
+                        if not Users.has_users()
                         else request.app.state.config.DEFAULT_USER_ROLE
                     )
 
@@ -334,6 +410,22 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
                     user.id, request.app.state.config.USER_PERMISSIONS
                 )
 
+                if (
+                    user.role != "admin"
+                    and ENABLE_LDAP_GROUP_MANAGEMENT
+                    and user_groups
+                ):
+                    if ENABLE_LDAP_GROUP_CREATION:
+                        Groups.create_groups_by_group_names(user.id, user_groups)
+
+                    try:
+                        Groups.sync_groups_by_group_names(user.id, user_groups)
+                        log.info(
+                            f"Successfully synced groups for user {user.id}: {user_groups}"
+                        )
+                    except Exception as e:
+                        log.error(f"Failed to sync groups for user {user.id}: {e}")
+
                 return {
                     "token": token,
                     "token_type": "Bearer",
@@ -386,7 +478,7 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
             group_names = [name.strip() for name in group_names if name.strip()]
 
             if group_names:
-                Groups.sync_user_groups_by_group_names(user.id, group_names)
+                Groups.sync_groups_by_group_names(user.id, group_names)
 
     elif WEBUI_AUTH == False:
         admin_email = "admin@localhost"
@@ -395,7 +487,7 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
         if Users.get_user_by_email(admin_email.lower()):
             user = Auths.authenticate_user(admin_email.lower(), admin_password)
         else:
-            if Users.get_num_users() != 0:
+            if Users.has_users():
                 raise HTTPException(400, detail=ERROR_MESSAGES.EXISTING_USERS)
 
             await signup(
@@ -462,6 +554,7 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
 
 @router.post("/signup", response_model=SessionUserResponse)
 async def signup(request: Request, response: Response, form_data: SignupForm):
+    has_users = Users.has_users()
 
     if WEBUI_AUTH:
         if (
@@ -472,12 +565,11 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
                 status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
             )
     else:
-        if Users.get_num_users() != 0:
+        if has_users:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
             )
 
-    user_count = Users.get_num_users()
     if not validate_email_format(form_data.email.lower()):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.INVALID_EMAIL_FORMAT
@@ -487,9 +579,7 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
         raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
 
     try:
-        role = (
-            "admin" if user_count == 0 else request.app.state.config.DEFAULT_USER_ROLE
-        )
+        role = "admin" if not has_users else request.app.state.config.DEFAULT_USER_ROLE
 
         # The password passed to bcrypt must be 72 bytes or fewer. If it is longer, it will be truncated before hashing.
         if len(form_data.password.encode("utf-8")) > 72:
@@ -550,7 +640,7 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
                 user.id, request.app.state.config.USER_PERMISSIONS
             )
 
-            if user_count == 0:
+            if not has_users:
                 # Disable signup after the first user is created
                 request.app.state.config.ENABLE_SIGNUP = False
 
@@ -575,12 +665,13 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
 @router.get("/signout")
 async def signout(request: Request, response: Response):
     response.delete_cookie("token")
+    response.delete_cookie("oui-session")
 
     if ENABLE_OAUTH_SIGNUP.value:
         oauth_id_token = request.cookies.get("oauth_id_token")
-        if oauth_id_token:
+        if oauth_id_token and OPENID_PROVIDER_URL.value:
             try:
-                async with ClientSession() as session:
+                async with ClientSession(trust_env=True) as session:
                     async with session.get(OPENID_PROVIDER_URL.value) as resp:
                         if resp.status == 200:
                             openid_data = await resp.json()
@@ -592,7 +683,12 @@ async def signout(request: Request, response: Response):
                                     status_code=200,
                                     content={
                                         "status": True,
-                                        "redirect_url": f"{logout_url}?id_token_hint={oauth_id_token}",
+                                        "redirect_url": f"{logout_url}?id_token_hint={oauth_id_token}"
+                                        + (
+                                            f"&post_logout_redirect_uri={WEBUI_AUTH_SIGNOUT_REDIRECT_URL}"
+                                            if WEBUI_AUTH_SIGNOUT_REDIRECT_URL
+                                            else ""
+                                        ),
                                     },
                                     headers=response.headers,
                                 )
