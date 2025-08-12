@@ -181,8 +181,8 @@
 						</div>
 						{#if document.metadata?.html}
 							<iframe
-								class="w-full border-0 h-[30rem] rounded-none"
-								sandbox="allow-scripts allow-forms allow-same-origin"
+								class="w-full border-0 h-[25rem] rounded-none"
+								sandbox="allow-scripts allow-popups allow-forms allow-same-origin"
 								srcdoc={document.document}
 								title={$i18n.t('Content')}
 							></iframe>
