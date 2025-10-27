@@ -343,7 +343,7 @@
 						{onSourceClick}
 					/>
 				{:else}
-					{unescapeHtml(token.text)}
+					{@html unescapeHtml(token.text)}
 				{/if}
 			</p>
 		{:else if token.tokens}
@@ -354,7 +354,7 @@
 				{onSourceClick}
 			/>
 		{:else}
-			{unescapeHtml(token.text)}
+			{@html unescapeHtml(token.text)}
 		{/if}
 	{:else if token.type === 'inlineKatex'}
 		{#if token.text}
