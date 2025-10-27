@@ -104,7 +104,7 @@
 
 		<div class="flex flex-col md:flex-row w-full px-5 pb-5 md:space-x-4">
 			<div
-				class="flex flex-col w-full dark:text-gray-200 overflow-y-scroll max-h-[22rem] scrollbar-thin gap-1"
+				class="flex flex-col w-full dark:text-gray-200 overflow-y-scroll scrollbar-thin gap-1"
 			>
 				{#each mergedDocuments as document, documentIdx}
 					<div class="flex flex-col w-full gap-2">
@@ -160,10 +160,6 @@
 								{/if}
 							</div>
 						</div>
-					<div class="flex flex-col w-full">
-						<div class=" text-sm font-medium dark:text-gray-300 mt-2">
-							{$i18n.t('Content')}
-						</div>
 						{#if document.metadata?.html}
 							<iframe
 								class="w-full border-0 h-[25rem] rounded-none"
@@ -173,10 +169,9 @@
 							></iframe>
 						{:else}
 							<pre class="text-sm dark:text-gray-400 whitespace-pre-line">
-                {document.document}
-              </pre>
-							{/if}
-						</div>
+								{document.document}
+							</pre>
+						{/if}
 					</div>
 				{/each}
 			</div>

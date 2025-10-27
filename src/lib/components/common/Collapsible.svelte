@@ -267,7 +267,7 @@
 								{$i18n.t('Analyzing...')}
 							{/if}
 						{:else}
-							{title}
+							{@html DOMPurify.sanitize(title)}
 						{/if}
 					</div>
 
